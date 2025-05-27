@@ -487,6 +487,7 @@ def page_not_found(e):
 
 
 if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
     # Create template files if they don't exist (basic placeholders)
     if not os.path.exists('templates'): os.makedirs('templates')
     for fname, content in {
