@@ -1,4 +1,4 @@
-from flask import Flask, render_template, abort
+from flask import Flask, render_template, abort, jsonify  # Added jsonify
 import yfinance as yf
 import pandas as pd
 from ta.trend import SMAIndicator, MACD
@@ -6,33 +6,66 @@ from ta.momentum import RSIIndicator
 from datetime import datetime, timedelta
 import requests
 import os
+import traceback  # Added for detailed error logging
 
 app = Flask(__name__)
 
+# --- IMPORTANT: Use Environment Variable for API Key ---
+# Make sure to set NEWS_API_KEY in your Render environment variables
 NEWS_API_KEY = '54a57b27df13442aaa2d1acb159e2b08'
+
+if not NEWS_API_KEY:
+    print("-" * 60)
+    print("WARNING: NEWS_API_KEY environment variable is NOT SET.")
+    print("Real news headlines will not be fetched effectively or might fail.")
+    print("Please get a new API key from NewsAPI.org and set it in Render's environment variables.")
+    print("-" * 60)
 
 
 # --- Helper Functions for Stock Analysis ---
 
 def get_stock_data(ticker_symbol, period="1y"):
+    print(f"[LOG] get_stock_data: Attempting to fetch yfinance data for: {ticker_symbol}, period: {period}")
     try:
         ticker = yf.Ticker(ticker_symbol)
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=365 * 1)  # Fetch 1 year data
-        history_df = ticker.history(start=start_date, end=end_date)
+        # For 1 year of data, yfinance usually handles the exact start date well.
+        # Let's ensure we ask for enough to cover typical TA window needs.
+        start_date_calc = end_date - timedelta(days=400)  # Slightly more than 1 year for TA calculations
+
+        history_df = ticker.history(start=start_date_calc, end=end_date, timeout=20)  # Added timeout
+
         if history_df.empty:
-            print(f"No data found for {ticker_symbol}")
+            print(f"[LOG] get_stock_data: No historical data found for {ticker_symbol} from yfinance.")
+            # Attempt to get .info as a fallback to see if the ticker is valid at all
+            try:
+                info = ticker.info
+                if info and info.get('regularMarketPrice'):
+                    print(
+                        f"[LOG] get_stock_data: Historical data empty, but .info found for {ticker_symbol}. Ticker likely valid but might lack history for the period.")
+                else:
+                    print(
+                        f"[LOG] get_stock_data: Historical data empty and .info also seems sparse or invalid for {ticker_symbol}.")
+            except Exception as e_info:
+                print(
+                    f"[LOG] get_stock_data: Error trying to get .info after empty history for {ticker_symbol}: {e_info}")
             return None
+
         if 'Close' not in history_df.columns:
-            print(f"'Close' column not found in data for {ticker_symbol}")
+            print(
+                f"[LOG] get_stock_data: 'Close' column not found in data for {ticker_symbol}. Columns: {history_df.columns}")
             return None
+
+        print(f"[LOG] get_stock_data: Successfully fetched {len(history_df)} rows for {ticker_symbol}.")
         return history_df
     except Exception as e:
-        print(f"Error fetching stock price data for {ticker_symbol}: {e}")
+        print(f"[ERROR] get_stock_data: Error fetching stock price data for {ticker_symbol}: {e}")
+        print(traceback.format_exc())
         return None
 
 
 def analyze_sma(df, short_window=20, long_window=50):
+    # ... (SMA analysis code remains the same - no changes needed for this specific issue)
     analysis = {
         "name": "Simple Moving Averages (SMA)",
         "signal_key": "NEUTRAL",
@@ -89,11 +122,13 @@ def analyze_sma(df, short_window=20, long_window=50):
         analysis["signal_key"] = "ERROR"
         analysis["signal_text"] = "Error"
         analysis["details"] = f"Error during SMA analysis: {str(e)}"
-        print(f"Error in SMA analysis for {df.index.name if hasattr(df.index, 'name') else 'unknown ticker'}: {e}")
+        print(f"[ERROR] analyze_sma: Error for {df.index.name if hasattr(df.index, 'name') else 'unknown ticker'}: {e}")
+        print(traceback.format_exc())
     return analysis
 
 
 def analyze_rsi(df, window=14, oversold_threshold=30, overbought_threshold=70):
+    # ... (RSI analysis code remains the same)
     analysis = {
         "name": "Relative Strength Index (RSI)",
         "signal_key": "NEUTRAL",
@@ -106,7 +141,7 @@ def analyze_rsi(df, window=14, oversold_threshold=30, overbought_threshold=70):
             "Traders also look for divergences and centerline crossovers."
         )
     }
-    if df is None or len(df) < window + 1:  # RSI needs at least window + 1 periods for initial calculation
+    if df is None or len(df) < window + 1:
         analysis["signal_key"] = "NO_DATA"
         analysis["signal_text"] = "Not enough data"
         analysis["details"] = "Insufficient historical data for RSI calculation."
@@ -130,11 +165,13 @@ def analyze_rsi(df, window=14, oversold_threshold=30, overbought_threshold=70):
         analysis["signal_key"] = "ERROR"
         analysis["signal_text"] = "Error"
         analysis["details"] = f"Error during RSI analysis: {str(e)}"
-        print(f"Error in RSI analysis for {df.index.name if hasattr(df.index, 'name') else 'unknown ticker'}: {e}")
+        print(f"[ERROR] analyze_rsi: Error for {df.index.name if hasattr(df.index, 'name') else 'unknown ticker'}: {e}")
+        print(traceback.format_exc())
     return analysis
 
 
 def analyze_macd(df, window_fast=12, window_slow=26, window_sign=9):
+    # ... (MACD analysis code remains the same)
     analysis = {
         "name": "MACD (Moving Average Convergence Divergence)",
         "signal_key": "NEUTRAL",
@@ -148,7 +185,6 @@ def analyze_macd(df, window_fast=12, window_slow=26, window_sign=9):
             "The histogram represents the difference between the MACD and Signal lines."
         )
     }
-    # MACD needs enough data points for slow MA, then signal line on top of that
     if df is None or len(df) < window_slow + window_sign:
         analysis["signal_key"] = "NO_DATA"
         analysis["signal_text"] = "Not enough data"
@@ -189,11 +225,11 @@ def analyze_macd(df, window_fast=12, window_slow=26, window_sign=9):
             else:
                 analysis["signal_key"] = "SELL"
                 analysis["signal_text"] = "Sell (MACD Bearish Crossover)"
-        elif last_macd_line > last_macd_signal and last_macd_line > 0:  # MACD line is above signal and positive
-            analysis["signal_key"] = "NEUTRAL"  # "Hold / Weak Buy" - keep neutral for now
+        elif last_macd_line > last_macd_signal and last_macd_line > 0:
+            analysis["signal_key"] = "NEUTRAL"
             analysis["signal_text"] = "Hold (MACD Bullish Stance)"
-        elif last_macd_line < last_macd_signal and last_macd_line < 0:  # MACD line is below signal and negative
-            analysis["signal_key"] = "NEUTRAL"  # "Hold / Weak Sell" - keep neutral
+        elif last_macd_line < last_macd_signal and last_macd_line < 0:
+            analysis["signal_key"] = "NEUTRAL"
             analysis["signal_text"] = "Hold (MACD Bearish Stance)"
         else:
             analysis["signal_key"] = "NEUTRAL"
@@ -202,11 +238,14 @@ def analyze_macd(df, window_fast=12, window_slow=26, window_sign=9):
         analysis["signal_key"] = "ERROR"
         analysis["signal_text"] = "Error"
         analysis["details"] = f"Error during MACD analysis: {str(e)}"
-        print(f"Error in MACD analysis for {df.index.name if hasattr(df.index, 'name') else 'unknown ticker'}: {e}")
+        print(
+            f"[ERROR] analyze_macd: Error for {df.index.name if hasattr(df.index, 'name') else 'unknown ticker'}: {e}")
+        print(traceback.format_exc())
     return analysis
 
 
 def get_overall_recommendation_v2(analyses_results, fundamental_data):
+    # ... (Overall recommendation logic remains the same)
     score = 0
     weights = {
         "SMA": 1.5,
@@ -222,12 +261,11 @@ def get_overall_recommendation_v2(analyses_results, fundamental_data):
         "NO_DATA": 0,
         "ERROR": 0
     }
-
     active_indicators = 0
-    details_log = []  # For debugging score
+    details_log = []
 
     for result in analyses_results:
-        indicator_name_key = result["name"].split(" ")[0]  # "SMA", "RSI", "MACD"
+        indicator_name_key = result["name"].split(" ")[0]
         signal_key = result.get("signal_key", "NEUTRAL")
         current_score_change = 0
 
@@ -261,47 +299,46 @@ def get_overall_recommendation_v2(analyses_results, fundamental_data):
             if 0 < pe < 15:
                 fundamental_modifier += 0.5
             elif pe > 30 and pe < 50:
-                fundamental_modifier -= 0.25  # Slightly high
+                fundamental_modifier -= 0.25
             elif pe >= 50:
-                fundamental_modifier -= 0.5  # Very high
+                fundamental_modifier -= 0.5
         if fundamental_data.get("PEG Ratio") != "N/A":
             peg = float(fundamental_data["PEG Ratio"])
             if 0 < peg < 1:
                 fundamental_modifier += 0.5
             elif peg > 2:
                 fundamental_modifier -= 0.25
-        # Could add more fundamental checks here (e.g., positive EPS growth, reasonable Debt/Equity)
         details_log.append(f"Fundamental Modifier: {fundamental_modifier:+.2f}")
     except ValueError:
         details_log.append("Fundamental Modifier: Error parsing fundamental values.")
-        pass
+        pass  # Keep going if fundamental parsing fails
     score += fundamental_modifier
 
     details_log.append(f"Final Score: {score:.2f}")
-    print("Recommendation Details:", "; ".join(details_log))  # Print for debugging
+    print("[LOG] Recommendation Details:", "; ".join(details_log))
 
-    if active_indicators == 0:
-        return "Not Enough Data for Recommendation"
-
+    if active_indicators == 0: return "Not Enough Data for Recommendation"
     if score >= 3.5:
         return "Strong Buy Candidate"
     elif score >= 1.5:
         return "Buy Candidate"
     elif score >= 0.5:
-        return "Leaning Towards Buy"  # Changed from > 0.5 to >= 0.5
+        return "Leaning Towards Buy"
     elif score <= -3.5:
         return "Strong Sell Candidate"
     elif score <= -1.5:
         return "Sell Candidate"
     elif score <= -0.5:
-        return "Leaning Towards Sell"  # Changed from < -0.5 to <= -0.5
+        return "Leaning Towards Sell"
     else:
         return "Neutral / Hold - Mixed Signals"
 
 
 def get_real_news_headlines(query_term, company_name, num_headlines=5):
+    print(f"[LOG] get_real_news_headlines: Fetching news for query='{query_term}', company='{company_name}'")
     if not NEWS_API_KEY:
-        return [{"title": "NewsAPI key not configured.", "source": "System", "url": "#"}]
+        print("[LOG] get_real_news_headlines: NEWS_API_KEY is not configured. Returning placeholder.")
+        return [{"title": "NewsAPI key not configured. News service unavailable.", "source": "System", "url": "#"}]
 
     search_query = company_name if company_name and company_name != query_term else f"{query_term} stock"
     if "Ltd" in search_query or "Limited" in search_query:
@@ -309,15 +346,17 @@ def get_real_news_headlines(query_term, company_name, num_headlines=5):
 
     headlines_list = []
     api_urls_tried = []
+    user_agent = {
+        'User-Agent': f'ASXDashboardApp/1.0 (render.com; +{os.environ.get("RENDER_EXTERNAL_URL", "your-app-name.onrender.com")})'}
 
-    # Try with qInTitle first
     url_intitle = (f"https://newsapi.org/v2/everything?"
                    f"qInTitle={requests.utils.quote(search_query)}"
                    f"&language=en&sortBy=publishedAt&pageSize={num_headlines}&apiKey={NEWS_API_KEY}")
-    api_urls_tried.append(f"Attempt 1 (qInTitle): {url_intitle}")
+    api_urls_tried.append(f"Attempt 1 (qInTitle): {url_intitle.replace(NEWS_API_KEY, 'REDACTED_KEY')}")
 
     try:
-        response = requests.get(url_intitle, timeout=10)
+        response = requests.get(url_intitle, timeout=15, headers=user_agent)  # Increased timeout, added user-agent
+        print(f"[LOG] get_real_news_headlines (qInTitle): Status {response.status_code} for {search_query}")
         response.raise_for_status()
         news_data = response.json()
 
@@ -331,14 +370,17 @@ def get_real_news_headlines(query_term, company_name, num_headlines=5):
                         "url": article.get("url")
                     })
 
-        # If qInTitle yields few or no results, try a broader query with q
         if not headlines_list or len(headlines_list) < num_headlines // 2:
+            print(
+                f"[LOG] get_real_news_headlines: qInTitle returned {len(headlines_list)} results. Trying broader query.")
             url_broader = (f"https://newsapi.org/v2/everything?"
                            f"q={requests.utils.quote(search_query)}"
-                           f"&language=en&sortBy=relevance&pageSize={num_headlines}&apiKey={NEWS_API_KEY}")
-            api_urls_tried.append(f"Attempt 2 (q broader): {url_broader}")
+                           f"&language=en&sortBy=relevancy&pageSize={num_headlines}&apiKey={NEWS_API_KEY}")  # Changed sortBy to relevancy
+            api_urls_tried.append(f"Attempt 2 (q broader): {url_broader.replace(NEWS_API_KEY, 'REDACTED_KEY')}")
 
-            response_broader = requests.get(url_broader, timeout=10)
+            response_broader = requests.get(url_broader, timeout=15, headers=user_agent)
+            print(
+                f"[LOG] get_real_news_headlines (q broader): Status {response_broader.status_code} for {search_query}")
             response_broader.raise_for_status()
             news_data_broader = response_broader.json()
             articles_broader = news_data_broader.get("articles", [])
@@ -357,14 +399,30 @@ def get_real_news_headlines(query_term, company_name, num_headlines=5):
                         existing_titles.add(title)
 
         if not headlines_list:
+            print(f"[LOG] get_real_news_headlines: No headlines found for '{search_query}' after all attempts.")
             return [{"title": f"No recent headlines found for '{search_query}'.", "source": "NewsAPI", "url": "#"}]
+
+        print(
+            f"[LOG] get_real_news_headlines: Successfully fetched {len(headlines_list)} headlines for '{search_query}'.")
         return headlines_list
 
+    except requests.exceptions.HTTPError as http_err:
+        print(
+            f"[ERROR] get_real_news_headlines: HTTP error for {search_query}. Status: {http_err.response.status_code}. Response: {http_err.response.text[:200]}...")  # Log part of response
+        print(f"URLs tried: {api_urls_tried}")
+        print(traceback.format_exc())
+        return [{
+                    "title": f"Could not fetch news (HTTP Error {http_err.response.status_code}). Please check API key or usage limits.",
+                    "source": "System", "url": "#"}]
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching news for {search_query}. URLs tried: {api_urls_tried}. Error: {e}")
+        print(
+            f"[ERROR] get_real_news_headlines: RequestException for {search_query}. URLs tried: {api_urls_tried}. Error: {e}")
+        print(traceback.format_exc())
         return [{"title": f"Could not fetch news. Error: {e}", "source": "System", "url": "#"}]
     except Exception as e:
-        print(f"An unexpected error occurred while fetching news: {e}. URLs: {api_urls_tried}")
+        print(
+            f"[ERROR] get_real_news_headlines: An unexpected error occurred while fetching news: {e}. URLs: {api_urls_tried}")
+        print(traceback.format_exc())
         return [{"title": "An unexpected error occurred while fetching news.", "source": "System", "url": "#"}]
 
 
@@ -377,45 +435,61 @@ def index():
 
 @app.route('/dashboard/<string:ticker_symbol>')
 def dashboard(ticker_symbol):
+    print(f"[LOG] dashboard: Request for ticker: {ticker_symbol}")
     stock_df = get_stock_data(ticker_symbol)
 
     if stock_df is None or stock_df.empty:
+        print(f"[LOG] dashboard: stock_df is None or empty for {ticker_symbol}. Aborting with 404.")
         abort(404,
-              description=f"Could not retrieve or process historical price data for ticker '{ticker_symbol}'. Check ticker or try again later.")
+              description=f"Could not retrieve or process historical price data for ticker '{ticker_symbol}'. Check if the ticker is valid and has available data, or try again later.")
 
     stock_name = ticker_symbol.upper()
     current_price_val = "N/A"
     change_val = "N/A"
     change_percent_val = "N/A"
-    yf_ticker_info = None  # Initialize
+    yf_ticker_info = None
 
+    print(f"[LOG] dashboard: Attempting to fetch yf.Ticker.info for {ticker_symbol}")
     try:
-        yf_ticker_info = yf.Ticker(ticker_symbol).info
+        # It's good practice to re-initialize Ticker object if info is needed and not already fetched
+        # or if you want fresh .info data
+        yf_ticker_obj = yf.Ticker(ticker_symbol)
+        yf_ticker_info = yf_ticker_obj.info  # This can be slow or fail
         stock_name = yf_ticker_info.get('longName', yf_ticker_info.get('shortName', ticker_symbol.upper()))
+        print(f"[LOG] dashboard: Successfully fetched .info for {ticker_symbol}. Name: {stock_name}")
 
+        # Price data primarily from history_df as it's more reliable for 'Close'
         if not stock_df.empty and 'Close' in stock_df.columns and len(stock_df['Close']) > 0:
             current_price_val = stock_df["Close"].iloc[-1]
-            prev_close = stock_df["Close"].iloc[-2] if len(stock_df["Close"]) > 1 else current_price_val
+            prev_close = stock_df["Close"].iloc[-2] if len(
+                stock_df["Close"]) > 1 else current_price_val  # Use current if only 1 day
             if isinstance(current_price_val, (int, float)) and isinstance(prev_close, (int, float)):
                 change_val = current_price_val - prev_close
                 change_percent_val = (change_val / prev_close) * 100 if prev_close != 0 else 0
-        else:  # Fallback if history is somehow empty after initial check but info is available
-            current_price_val = yf_ticker_info.get('currentPrice', yf_ticker_info.get('regularMarketPreviousClose'))
-            prev_close = yf_ticker_info.get('previousClose', current_price_val)
+        elif yf_ticker_info:  # Fallback to .info if history_df was problematic for current price
+            print(f"[LOG] dashboard: Using .info for price as stock_df was insufficient for {ticker_symbol}")
+            current_price_val = yf_ticker_info.get('currentPrice', yf_ticker_info.get('regularMarketPrice',
+                                                                                      yf_ticker_info.get(
+                                                                                          'regularMarketPreviousClose')))
+            prev_close = yf_ticker_info.get('regularMarketPreviousClose',
+                                            current_price_val)  # Fallback carefully for prev_close
             if isinstance(current_price_val, (int, float)) and isinstance(prev_close, (int, float)):
                 change_val = current_price_val - prev_close
                 change_percent_val = (change_val / prev_close) * 100 if prev_close != 0 else 0
+            else:  # Ensure they are not None before math
+                change_val, change_percent_val = "N/A", "N/A"
+
     except Exception as e:
-        print(f"Could not fetch full Ticker info for {ticker_symbol}: {e}")
-        # Fallback using only historical data if .info failed
+        print(f"[ERROR] dashboard: Could not fetch full Ticker.info for {ticker_symbol}: {e}")
+        print(traceback.format_exc())
+        # Fallback using only historical data if .info failed, already handled for current_price_val from stock_df
         if not stock_df.empty and 'Close' in stock_df.columns and len(stock_df['Close']) > 0:
-            current_price_val = stock_df["Close"].iloc[-1]
-            prev_close = stock_df["Close"].iloc[-2] if len(stock_df["Close"]) > 1 else current_price_val
-            if isinstance(current_price_val, (int, float)) and isinstance(prev_close, (int, float)):
-                change_val = current_price_val - prev_close
-                change_percent_val = (change_val / prev_close) * 100 if prev_close != 0 else 0
+            current_price_val = stock_df["Close"].iloc[-1]  # Ensure it's set if info fails
+            # Change calc would be as above if stock_df has >1 rows
+        else:  # If both stock_df and .info fail for price
+            print(f"[LOG] dashboard: Both stock_df and Ticker.info failed to provide price for {ticker_symbol}")
+            current_price_val = "N/A"  # Already default, but explicit
 
-    # --- Enhanced Fundamental Data ---
     fundamentals = {
         "Market Cap": "N/A", "Trailing P/E": "N/A", "Forward P/E": "N/A", "PEG Ratio": "N/A",
         "Price to Sales (TTM)": "N/A", "Price to Book": "N/A", "Enterprise Value to EBITDA": "N/A",
@@ -423,7 +497,8 @@ def dashboard(ticker_symbol):
         "52 Week High": "N/A", "52 Week Low": "N/A", "Average Volume (10 day)": "N/A",
         "Profit Margins": "N/A", "Return on Equity (ROE)": "N/A"
     }
-    if yf_ticker_info:  # Only process if yf_ticker_info was successfully fetched
+    if yf_ticker_info:
+        print(f"[LOG] dashboard: Processing fundamentals from .info for {ticker_symbol}")
         market_cap_raw = yf_ticker_info.get('marketCap')
         if isinstance(market_cap_raw, (int, float)):
             if market_cap_raw >= 1_000_000_000_000:
@@ -447,15 +522,20 @@ def dashboard(ticker_symbol):
             ("Return on Equity (ROE)", 'returnOnEquity', 100, "", "%")
         ]:
             val = yf_ticker_info.get(yf_key)
-            if isinstance(val, (int, float)): fundamentals[key] = f"{prefix}{val * factor:.2f}{suffix}"
+            if isinstance(val, (int, float)):
+                fundamentals[key] = f"{prefix}{val * factor:.2f}{suffix}"
+            elif val is None:
+                fundamentals[key] = "N/A"  # Explicitly N/A if None
 
         avg_vol = yf_ticker_info.get('averageVolume10days', yf_ticker_info.get('averageVolume'))
         if isinstance(avg_vol, (int, float)): fundamentals["Average Volume (10 day)"] = f"{avg_vol:,.0f}"
+    else:
+        print(f"[LOG] dashboard: yf_ticker_info is None for {ticker_symbol}, fundamentals will be N/A.")
 
-    # Perform technical analyses
-    sma_analysis = analyze_sma(stock_df.copy())
-    rsi_analysis = analyze_rsi(stock_df.copy())
-    macd_analysis = analyze_macd(stock_df.copy())
+    print(f"[LOG] dashboard: Performing technical analyses for {ticker_symbol}")
+    sma_analysis = analyze_sma(stock_df.copy() if stock_df is not None else None)  # Pass None if df is None
+    rsi_analysis = analyze_rsi(stock_df.copy() if stock_df is not None else None)
+    macd_analysis = analyze_macd(stock_df.copy() if stock_df is not None else None)
     analyses = [sma_analysis, rsi_analysis, macd_analysis]
 
     overall_recommendation = get_overall_recommendation_v2(analyses, fundamentals)
@@ -477,74 +557,110 @@ def dashboard(ticker_symbol):
         'headlines': headlines,
         'disclaimer': "All analysis is for educational purposes only and NOT financial advice. Market conditions can change rapidly. News headlines provided by NewsAPI.org. Fundamental data from Yahoo Finance."
     }
+    print(f"[LOG] dashboard: Rendering dashboard_analysis.html for {ticker_symbol}")
     return render_template('dashboard_analysis.html', data=data)
 
 
 @app.errorhandler(404)
 def page_not_found(e):
     error_description = e.description if hasattr(e, 'description') else "The requested page was not found."
+    print(f"[LOG] page_not_found: 404 error - {error_description}")
     return render_template('404.html', error_description=error_description), 404
 
 
+# --- Debugging Routes ---
+@app.route('/test-yfinance-minimal/<string:ticker_sym>')
+def test_yfinance_minimal(ticker_sym):
+    print(f"[LOG] test_yfinance_minimal: Request for ticker: {ticker_sym}")
+    try:
+        stock = yf.Ticker(ticker_sym)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)  # Fetch 1 month of data for test
+
+        print(f"[LOG] test_yfinance_minimal: Getting history for {ticker_sym}")
+        hist = stock.history(start=start_date, end=end_date, timeout=20)  # Added timeout
+
+        result_message = ""
+        if not hist.empty:
+            result_message += f"Success for {ticker_sym}! Fetched {len(hist)} history rows. First row: {hist.iloc[0].to_dict()}\n"
+        else:
+            result_message += f"History data for {ticker_sym} was empty.\n"
+
+        print(f"[LOG] test_yfinance_minimal: Getting .info for {ticker_sym}")
+        info = stock.info  # This can be slow or fail
+        if info and info.get('regularMarketPrice'):
+            result_message += f".info found price: {info['regularMarketPrice']}. Sector: {info.get('sector', 'N/A')}"
+        elif info:
+            result_message += f".info fetched but no regularMarketPrice. Keys: {list(info.keys())[:10]}"
+        else:
+            result_message += ".info was empty or could not be fetched."
+
+        print(f"[LOG] test_yfinance_minimal: Result for {ticker_sym}: {result_message}")
+        return jsonify({"ticker": ticker_sym, "message": result_message, "status": "success"})
+
+    except Exception as e:
+        error_msg = f"Error during minimal yfinance test for {ticker_sym}: {str(e)}"
+        print(f"[ERROR] test_yfinance_minimal: {error_msg}")
+        print(traceback.format_exc())
+        return jsonify(
+            {"ticker": ticker_sym, "message": error_msg, "traceback": traceback.format_exc(), "status": "error"}), 500
+
+
+@app.route('/debug-network')
+def debug_network_connectivity():
+    print("[LOG] debug_network_connectivity: Request received.")
+    urls_to_test = {
+        "Google DNS Ping (check general outbound)": "8.8.8.8",  # Ping target
+        "Yahoo Finance Site": "https://finance.yahoo.com",
+        "Yahoo Finance Query1 API": "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d",
+        # Example API endpoint
+        "NewsAPI (if key is set)": f"https://newsapi.org/v2/everything?q=test&apiKey={NEWS_API_KEY if NEWS_API_KEY else 'NO_KEY_SET'}"
+    }
+    results = {}
+
+    for name, url_or_ip in urls_to_test.items():
+        print(f"[LOG] debug_network_connectivity: Testing '{name}' ({url_or_ip})")
+        if "Ping" in name:  # Basic ping using subprocess
+            # This might not work in all Render environments depending on permissions / installed tools
+            try:
+                import subprocess
+                # Use -c 1 for a single ping, timeout 5 seconds
+                process = subprocess.run(['ping', '-c', '1', '-W', '5', url_or_ip], capture_output=True, text=True,
+                                         timeout=10)
+                if process.returncode == 0:
+                    results[name] = f"Ping to {url_or_ip} successful. Output: {process.stdout[:100]}..."
+                else:
+                    results[
+                        name] = f"Ping to {url_or_ip} failed. Return code: {process.returncode}. Stderr: {process.stderr[:100]}..."
+            except FileNotFoundError:
+                results[name] = f"Ping command not found for {url_or_ip}. Cannot perform ping test."
+            except subprocess.TimeoutExpired:
+                results[name] = f"Ping to {url_or_ip} timed out."
+            except Exception as e_ping:
+                results[name] = f"Ping to {url_or_ip} error: {str(e_ping)}"
+        else:  # HTTP GET request
+            try:
+                headers = {'User-Agent': 'RenderDebugConnectivityTest/1.0'}
+                response = requests.get(url_or_ip, timeout=15, headers=headers)  # 15s timeout
+                results[
+                    name] = f"URL: {url_or_ip.replace(NEWS_API_KEY, 'REDACTED_KEY') if NEWS_API_KEY and NEWS_API_KEY in url_or_ip else url_or_ip} -> Status: {response.status_code}, Len: {len(response.content)}"
+                if response.status_code != 200:
+                    results[name] += f", Response Text (first 200 chars): {response.text[:200]}"
+
+            except requests.exceptions.Timeout:
+                results[name] = f"URL: {url_or_ip} -> TIMEOUT"
+            except requests.exceptions.ConnectionError:
+                results[name] = f"URL: {url_or_ip} -> CONNECTION ERROR"
+            except Exception as e_req:
+                results[name] = f"URL: {url_or_ip} -> Error: {str(e_req)}"
+        print(f"[LOG] debug_network_connectivity: Result for '{name}': {results[name]}")
+    return jsonify(results)
+
+
 if __name__ == '__main__':
+    # This block is for local development.
+    # Render will use your Procfile (e.g., web: gunicorn app:app) or Start Command.
+    print("Starting Flask app in debug mode for local development...")
+    # The template and static file creation logic has been removed.
+    # Ensure these files are in your Git repository.
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-    # Create template files if they don't exist (basic placeholders)
-    if not os.path.exists('templates'): os.makedirs('templates')
-    for fname, content in {
-        'index_analysis.html': """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Stock Analysis Index</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body><div class="container"><h1>Stock Analysis Dashboard</h1><p>Select a ticker or enter one below. (ASX: CBA.AX)</p>{% for t in tickers %} <a href="{{ url_for('dashboard', ticker_symbol=t) }}">{{ t }}</a>{% endfor %}<form class="ticker-input-form" onsubmit="const ticker = document.getElementById('tickerInput').value.trim().toUpperCase(); if (ticker) window.location.href = `/dashboard/${ticker}`; return false;"><input type="text" id="tickerInput" placeholder="Enter Ticker (e.g., AAPL)"><button type="submit">Analyze</button></form></div></body></html>""",
-        'dashboard_analysis.html': """<!DOCTYPE html><html><head><title>Dashboard</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>Dashboard content here. This is a placeholder.</body></html>""",
-        # Actual content is separate
-        '404.html': """<!DOCTYPE html><html><head><title>Not Found</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body><div class="container"><h1>404 - Not Found</h1><p>{{ error_description }}</p><p><a href="{{ url_for('index') }}">Homepage</a></p></div></body></html>"""
-    }.items():
-        if not os.path.exists(
-                f'templates/{fname}') and fname != 'dashboard_analysis.html':  # dashboard_analysis.html is provided fully below
-            with open(f'templates/{fname}', 'w') as f: f.write(content)
-
-    # Create static folder and basic style.css
-    if not os.path.exists('static'): os.makedirs('static')
-    if not os.path.exists('static/style.css'):
-        with open('static/style.css', 'w') as f:
-            f.write("""
-                body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f6; color: #333; }
-                .container { max-width: 900px; margin: 20px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
-                h1, h2, h3 { color: #2c3e50; }
-                a { color: #3498db; text-decoration: none; }
-                a:hover { text-decoration: underline; }
-                .stock-header { border-bottom: 2px solid #e0e0e0; padding-bottom: 15px; margin-bottom: 20px; }
-                .stock-header h1 { margin-bottom: 5px; font-size: 2em;}
-                .stock-header .price-info { font-size: 1.2em; }
-                .price-info .change-positive { color: #2ecc71; }
-                .price-info .change-negative { color: #e74c3c; }
-                .overall-recommendation { background-color: #e8f4fd; border-left: 5px solid #3498db; padding: 15px; margin-bottom: 25px; border-radius: 4px; font-size: 1.1em; }
-                .overall-recommendation h2 { margin-top: 0; color: #2980b9; }
-                .analysis-widget { background-color: #ffffff; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 20px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-                .analysis-widget h3 { margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-                .analysis-widget .signal { font-weight: bold; margin-bottom: 10px; padding: 8px; border-radius: 4px; display: inline-block; }
-                .signal.buy { background-color: #d4efdf; color: #196f3d; border: 1px solid #a9dfbf;}
-                .signal.sell { background-color: #fadedb; color: #a93226; border: 1px solid #f5b7b1;}
-                .signal.neutral { background-color: #fdf2e9; color: #b9770e; border: 1px solid #f8c471;}
-                .signal.error, .signal.not-enough-data { background-color: #ebedef; color: #566573; border: 1px solid #dadee2;}
-                .analysis-widget .details p, .fundamental-grid p { margin: 5px 0; font-size: 0.9em; }
-                .analysis-widget .details strong, .fundamental-grid strong { color: #555; }
-                .analysis-widget .explanation { font-size: 0.9em; color: #555; margin-top: 10px; line-height: 1.5; }
-                .fundamental-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0px 20px; } /* Grid for fundamentals */
-                .explanation h4 { margin-top: 15px; margin-bottom: 5px; color: #34495e; }
-                .headlines-widget ul { list-style-type: none; padding-left: 0; }
-                .headlines-widget li { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
-                .headlines-widget li:last-child { border-bottom: none; }
-                .headlines-widget .headline-title a { text-decoration: none; color: #3498db; font-weight: bold; }
-                .headlines-widget .headline-source { font-size: 0.85em; color: #777; display: block; margin-top: 3px; }
-                .disclaimer { text-align: center; font-size: 0.8em; color: #7f8c8d; margin-top: 30px; padding-top:15px; border-top: 1px solid #e0e0e0;}
-                .back-link { display: inline-block; margin-top: 20px; }
-                /* Index page specific */
-                .ticker-input-form { margin-top: 20px; display: flex; justify-content: center; }
-                .ticker-input-form input[type="text"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px 0 0 4px; width: 60%; margin-right: -1px; }
-                .ticker-input-form button { padding: 10px 15px; background-color: #2ecc71; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; }
-                .ticker-input-form button:hover { background-color: #27ae60; }
-                #indexNav a { margin: 0 5px; padding: 5px 10px; background-color:#eee; border-radius:3px;}
-            """)
-
-    if not NEWS_API_KEY:
-        print(
-            "-" * 60 + "\nWARNING: NEWS_API_KEY environment variable is not set.\nReal news headlines will not be fetched.\nPlease get an API key from NewsAPI.org and set the environment variable.\n" + "-" * 60)
-    app.run(debug=True)
