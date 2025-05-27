@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ASX Dashboard Index</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        ul { list-style-type: none; padding: 0; }
+        li { margin-bottom: 10px; }
+        a { text-decoration: none; color: #007bff; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>ASX Stock Dashboards</h1>
+    <p>Select a ticker:</p>
+    <ul>
+        {% for ticker in tickers %}
+            <li><a href="{{ url_for('dashboard', ticker=ticker) }}">{{ ticker }}</a></li>
+        {% else %}
+            <li>No tickers available to display.</li>
+        {% endfor %}
+    </ul>
+    <p>
+        You can also try appending URLs directly, e.g.:
+        <a href="{{ url_for('dashboard', ticker='CBA') }}">/dashboard/CBA</a>,
+        <a href="{{ url_for('dashboard', ticker='BHP') }}">/dashboard/BHP</a>,
+        <a href="{{ url_for('dashboard', ticker='TLS') }}">/dashboard/TLS</a> (might have no news),
+        <a href="{{ url_for('dashboard', ticker='XYZ') }}">/dashboard/XYZ</a> (not found example).
+    </p>
+</body>
+</html>

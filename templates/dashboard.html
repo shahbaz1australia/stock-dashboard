@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stock Dashboard - {{ data.ticker }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        h1, h2 { color: #333; }
+        .stock-info p { margin: 5px 0; }
+        .headlines ul { list-style-type: disc; padding-left: 20px; }
+        .headlines li { margin-bottom: 8px; }
+        .no-headlines { color: #777; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>{{ data.name }} ({{ data.ticker }})</h1>
+    <div class="stock-info">
+        <p><strong>Price:</strong> ${{ data.price }}</p>
+        <p><strong>Change:</strong> {{ data.change }}</p>
+    </div>
+
+    <div class="headlines">
+        <h2>Recent Headlines:</h2>
+        {% if data.headlines %}
+            <ul>
+                {% for headline in data.headlines %}
+                    <li>{{ headline }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="no-headlines">No recent headlines available for {{ data.ticker }}.</p>
+        {% endif %}
+    </div>
+    <hr>
+    <p><a href="{{ url_for('index') }}">Back to Index</a></p>
+</body>
+</html>

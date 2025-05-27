@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASX Day Trading Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { display: flex; flex-wrap: wrap; gap: 20px; }
+        .widget { background-color: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; width: calc(33.333% - 28px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-width: 300px;}
+        .widget h2 { margin-top: 0; color: #0056b3; }
+        .widget p.explanation { font-size: 0.9em; color: #555; border-left: 3px solid #0056b3; padding-left: 10px; margin-bottom: 15px;}
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; }
+        th { background-color: #e9ecef; }
+        .stock-item { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #ccc; }
+        .stock-item:last-child { border-bottom: none; }
+        .confidence { font-weight: bold; }
+        .positive { color: green; }
+        .negative { color: red; }
+        .neutral { color: orange; }
+        .final-recommendations { background-color: #e6f7ff; border: 1px solid #b3e0ff; padding: 20px; margin-top: 30px; border-radius: 8px; }
+        .final-recommendations h2 { color: #004085; }
+         ul.reasons li { font-size: 0.85em; margin-left: -20px;}
+    </style>
+</head>
+<body>
+    <h1>ASX Day Trading Dashboard (Beginner Focus)</h1>
+    <p><strong>Disclaimer:</strong> Trading involves risk. This dashboard provides information based on technical and sentiment analysis for educational purposes. It is NOT financial advice. Past performance is not indicative of future results. Given your limited capital, extreme caution is advised. Brokerage fees can significantly impact small trades.</p>
+
+    <div class="container">
+        <div class="widget">
+            <h2>Momentum Trading Analysis</h2>
+            <p class="explanation">This widget shows stocks currently in a strong upward price trend (price above its 20-day and 50-day moving averages, with the 20-day average also above the 50-day). These stocks might continue to rise in the short term. Look for confirmation with high trading volume.</p>
+            {% if momentum_stocks %}
+                <table>
+                    <tr><th>Ticker</th><th>Price</th><th>Sentiment</th><th>Conf.</th></tr>
+                    {% for stock in momentum_stocks %}
+                    <tr>
+                        <td>{{ stock.ticker }}</td>
+                        <td>${{ "%.2f"|format(stock.price) }}</td>
+                        <td class="{{ 'positive' if stock.news_sentiment_score > 0.05 else 'negative' if stock.news_sentiment_score < -0.05 else 'neutral' }}">
+                            {{ "%.2f"|format(stock.news_sentiment_score) }}
+                        </td>
+                        <td class="confidence">{{ stock.confidence_score }}%</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            {% else %}
+                <p>No strong momentum stocks identified meeting criteria.</p>
+            {% endif %}
+        </div>
+
+        <div class="widget">
+            <h2>Mean Reversion Analysis</h2>
+            <p class="explanation">This widget identifies stocks that have recently dropped and are trading near their Lower Bollinger Band. If there's no bad news, these stocks might "revert" or bounce back up towards their average price. This is often seen as a potential buying opportunity for oversold stocks.</p>
+            {% if mean_reversion_stocks %}
+                 <table>
+                    <tr><th>Ticker</th><th>Price</th><th>Lower Band</th><th>Sentiment</th><th>Conf.</th></tr>
+                    {% for stock in mean_reversion_stocks %}
+                    <tr>
+                        <td>{{ stock.ticker }}</td>
+                        <td>${{ "%.2f"|format(stock.price) }}</td>
+                        <td>${{ "%.2f"|format(stock.lower_band) }}</td>
+                         <td class="{{ 'positive' if stock.news_sentiment_score > 0.05 else 'negative' if stock.news_sentiment_score < -0.05 else 'neutral' }}">
+                            {{ "%.2f"|format(stock.news_sentiment_score) }}
+                        </td>
+                        <td class="confidence">{{ stock.confidence_score }}%</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            {% else %}
+                <p>No mean reversion candidates identified meeting criteria.</p>
+            {% endif %}
+        </div>
+
+        <div class="widget">
+            <h2>News Sentiment Volatility</h2>
+            <p class="explanation">This widget highlights stocks with recent news and analyzes the sentiment (positive, negative, or neutral) of that news. Stocks with strong positive news sentiment and supporting technicals might see upward price movement. Always verify the news source and impact.</p>
+            {% if news_driven_stocks %}
+                <table>
+                    <tr><th>Ticker</th><th>Price</th><th>Sentiment Score</th><th>Headline Snippet</th><th>Conf.</th></tr>
+                    {% for stock in news_driven_stocks %}
+                    <tr>
+                        <td>{{ stock.ticker }}</td>
+                        <td>${{ "%.2f"|format(stock.price) }}</td>
+                        <td class="{{ 'positive' if stock.news_sentiment_score > 0.05 else 'negative' if stock.news_sentiment_score < -0.05 else 'neutral' }}">
+                            {{ "%.2f"|format(stock.news_sentiment_score) }}
+                        </td>
+                        <td>{{ stock.news_headlines[0][:30] if stock.news_headlines else 'N/A' }}...</td>
+                        <td class="confidence">{{ stock.confidence_score }}%</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            {% else %}
+                <p>No significant news-driven opportunities identified meeting criteria.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="final-recommendations">
+        <h2>Top Potential Day Trading Candidates (Combined Analysis)</h2>
+        <p>These are the top stocks based on a combination of momentum, mean reversion potential, news sentiment, and basic fundamentals. The confidence score reflects how many positive signals were found. <strong>A higher score suggests stronger potential, but is NOT a guarantee.</strong></p>
+        {% if all_screened_stocks %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Price (AUD)</th>
+                        <th>Sector</th>
+                        <th>Confidence Score</th>
+                        <th>Supporting Reasons</th>
+                        <th>EV/EBITDA</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in all_screened_stocks %}
+                    <tr>
+                        <td><strong>{{ stock.ticker }}</strong></td>
+                        <td>{{ "%.2f"|format(stock.price) }}</td>
+                        <td>{{ stock.sector }}</td>
+                        <td class="confidence">{{ stock.confidence_score }}%</td>
+                        <td>
+                            <ul class="reasons">
+                            {% for reason in stock.reasons %}
+                                <li>{{ reason }}</li>
+                            {% endfor %}
+                             {% if not stock.reasons %}<li>N/A</li>{% endif %}
+                            </ul>
+                        </td>
+                        <td>{{ "%.2f"|format(stock.ev_ebitda) if stock.ev_ebitda else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No stocks currently meet the high confidence criteria for recommendation.</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>

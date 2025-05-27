@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analysis - {{ data.ticker }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="stock-header">
+            <h1>{{ data.name }} ({{ data.ticker }})</h1>
+            <p class="price-info">
+                Current Price: ${{ data.current_price }}
+                <span class="{{ 'change-positive' if data.change and data.change[0] == '+' else ('change-negative' if data.change and data.change[0] == '-' else '') }}">
+                    ({{ data.change }}, {{ data.change_percent }})
+                </span>
+            </p>
+        </div>
+
+        <div class="fundamental-data analysis-widget">
+            <h3>Key Fundamental Metrics</h3>
+            <div class="details fundamental-grid">
+                {% for key, value in data.fundamentals.items() %}
+                    <p><strong>{{ key }}:</strong> {{ value }}</p>
+                {% endfor %}
+            </div>
+            <div class="explanation">
+                <h4>Understanding Key Ratios:</h4>
+                <p><strong>Market Cap:</strong> Total market value of a company's outstanding shares. Indicates company size.</p>
+                <p><strong>P/E Ratio (Price-to-Earnings):</strong> Current share price relative to its per-share earnings. High P/E suggests expectations of high future growth or potential overvaluation. Low P/E might indicate undervaluation or lower growth prospects.</p>
+                <p><strong>PEG Ratio (Price/Earnings-to-Growth):</strong> P/E ratio divided by earnings growth rate. Around 1 is often fair value. Lower can mean undervalued if growth is positive.</p>
+                <p><strong>Price to Sales (P/S TTM):</strong> Share price divided by trailing twelve months revenue per share. Useful for valuing unprofitable growth companies.</p>
+                <p><strong>Price to Book (P/B):</strong> Share price divided by book value per share. Below 1 might indicate undervaluation, but varies by industry.</p>
+                <p><strong>EPS (Earnings Per Share TTM):</strong> Company's profit (trailing twelve months) divided by its outstanding shares. Higher is generally better.</p>
+                <p><strong>Dividend Yield:</strong> Annual dividend per share divided by the share price (%). Shows return from dividends.</p>
+                <p><strong>Beta:</strong> Measures stock's volatility relative to the overall market. >1 more volatile; <1 less volatile.</p>
+                <p><strong>Profit Margins:</strong> Net income divided by revenue (%). Indicates profitability per dollar of sales.</p>
+                <p><strong>Return on Equity (ROE):</strong> Net income divided by shareholder equity (%). Measures profitability relative to shareholders' investment.</p>
+                <p><small>Note: "N/A" means data was not available. TTM = Trailing Twelve Months.</small></p>
+            </div>
+        </div>
+
+        <div class="overall-recommendation">
+            <h2>Overall Outlook:</h2>
+            <p>{{ data.overall_recommendation }}</p>
+        </div>
+
+        <h2>Technical Analysis Indicators:</h2>
+        {% for analysis in data.analyses %}
+        <div class="analysis-widget">
+            <h3>{{ analysis.name }}</h3>
+            <p>Signal:
+                <span class="signal
+                    {% if 'buy' in analysis.signal_text.lower() %}buy
+                    {% elif 'sell' in analysis.signal_text.lower() %}sell
+                    {% elif 'error' in analysis.signal_text.lower() or 'not enough data' in analysis.signal_text.lower() %}error
+                    {% else %}neutral{% endif %}">
+                    {{ analysis.signal_text }}
+                </span>
+            </p>
+            <div class="details">
+                {% if analysis.details is mapping %}
+                    {% for key, value in analysis.details.items() %}
+                        <p><strong>{{ key }}:</strong> {{ value }}</p>
+                    {% endfor %}
+                {% elif analysis.details %}
+                     <p>{{ analysis.details }}</p>
+                {% endif %}
+            </div>
+            <div class="explanation">
+                <p><strong>What this means:</strong> {{ analysis.explanation }}</p>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="headlines-widget analysis-widget">
+            <h3>Recent Headlines</h3>
+            {% if data.headlines %}
+                <ul>
+                    {% for item in data.headlines %}
+                        {% if item is mapping and item.title %} {# Ensure item is a dict and has a title #}
+                            <li>
+                                <span class="headline-title"><a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a></span>
+                                <span class="headline-source">Source: {{ item.source }}</span>
+                            </li>
+                        {% elif item is string %} {# If item is a string (e.g., error message from news fetch) #}
+                            <li>{{ item }}</li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No recent headlines available or could be fetched.</p>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('index') }}" class="back-link">« Back to Index</a>
+        <p class="disclaimer">{{ data.disclaimer }}</p>
+    </div>
+</body>
+</html>

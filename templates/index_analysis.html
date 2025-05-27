@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analysis Index</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Stock Analysis Dashboard</h1>
+        <p>Select a pre-defined ticker or enter one below.</p>
+        <p><small>(For ASX stocks, use .AX suffix, e.g., CBA.AX. For others, use ticker, e.g., AAPL, MSFT)</small></p>
+
+        <div id="indexNav" style="margin-bottom: 20px; text-align: center;">
+            {% for t in tickers %}
+                <a href="{{ url_for('dashboard', ticker_symbol=t) }}">{{ t }}</a>
+            {% endfor %}
+        </div>
+
+        <form class="ticker-input-form" onsubmit="return goToDashboard();">
+            <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g., AAPL, CBA.AX)">
+            <button type="submit">Analyze</button>
+        </form>
+    </div>
+
+    <script>
+        function goToDashboard() {
+            const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
+            if (ticker) {
+                // Basic validation: check for common problematic characters, though server-side validation is key
+                if (ticker.match(/^[A-Z0-9\.\-\^]+$/)) { // Allow letters, numbers, dot, hyphen, caret
+                    window.location.href = `/dashboard/${ticker}`;
+                } else {
+                    alert("Invalid characters in ticker symbol.");
+                }
+            } else {
+                alert("Please enter a ticker symbol.");
+            }
+            return false; // Prevent default form submission
+        }
+    </script>
+</body>
+</html>
