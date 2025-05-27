@@ -1,0 +1,39 @@
+
+                body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f6; color: #333; }
+                .container { max-width: 900px; margin: 20px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+                h1, h2, h3 { color: #2c3e50; }
+                a { color: #3498db; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+                .stock-header { border-bottom: 2px solid #e0e0e0; padding-bottom: 15px; margin-bottom: 20px; }
+                .stock-header h1 { margin-bottom: 5px; font-size: 2em;}
+                .stock-header .price-info { font-size: 1.2em; }
+                .price-info .change-positive { color: #2ecc71; }
+                .price-info .change-negative { color: #e74c3c; }
+                .overall-recommendation { background-color: #e8f4fd; border-left: 5px solid #3498db; padding: 15px; margin-bottom: 25px; border-radius: 4px; font-size: 1.1em; }
+                .overall-recommendation h2 { margin-top: 0; color: #2980b9; }
+                .analysis-widget { background-color: #ffffff; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 20px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+                .analysis-widget h3 { margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+                .analysis-widget .signal { font-weight: bold; margin-bottom: 10px; padding: 8px; border-radius: 4px; display: inline-block; }
+                .signal.buy { background-color: #d4efdf; color: #196f3d; border: 1px solid #a9dfbf;}
+                .signal.sell { background-color: #fadedb; color: #a93226; border: 1px solid #f5b7b1;}
+                .signal.neutral { background-color: #fdf2e9; color: #b9770e; border: 1px solid #f8c471;}
+                .signal.error, .signal.not-enough-data { background-color: #ebedef; color: #566573; border: 1px solid #dadee2;}
+                .analysis-widget .details p, .fundamental-grid p { margin: 5px 0; font-size: 0.9em; }
+                .analysis-widget .details strong, .fundamental-grid strong { color: #555; }
+                .analysis-widget .explanation { font-size: 0.9em; color: #555; margin-top: 10px; line-height: 1.5; }
+                .fundamental-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0px 20px; } /* Grid for fundamentals */
+                .explanation h4 { margin-top: 15px; margin-bottom: 5px; color: #34495e; }
+                .headlines-widget ul { list-style-type: none; padding-left: 0; }
+                .headlines-widget li { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
+                .headlines-widget li:last-child { border-bottom: none; }
+                .headlines-widget .headline-title a { text-decoration: none; color: #3498db; font-weight: bold; }
+                .headlines-widget .headline-source { font-size: 0.85em; color: #777; display: block; margin-top: 3px; }
+                .disclaimer { text-align: center; font-size: 0.8em; color: #7f8c8d; margin-top: 30px; padding-top:15px; border-top: 1px solid #e0e0e0;}
+                .back-link { display: inline-block; margin-top: 20px; }
+                /* Index page specific */
+                .ticker-input-form { margin-top: 20px; display: flex; justify-content: center; }
+                .ticker-input-form input[type="text"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px 0 0 4px; width: 60%; margin-right: -1px; }
+                .ticker-input-form button { padding: 10px 15px; background-color: #2ecc71; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; }
+                .ticker-input-form button:hover { background-color: #27ae60; }
+                #indexNav a { margin: 0 5px; padding: 5px 10px; background-color:#eee; border-radius:3px;}
+            
